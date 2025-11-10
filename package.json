@@ -1,7 +1,7 @@
 {
   "name": "komikcast-scrapping",
-  "version": "2.0.0",
-  "description": "Komikcast API with enhanced features: caching, rate limiting, error handling, and performance monitoring",
+  "version": "2.1.0",
+  "description": "Advanced Manga API with multi-provider support, advanced data processing pipeline, parallel processing, multi-level caching, and intelligent query building",
   "main": "src/server.js",
   "engines": {
     "node": "22.x",
@@ -17,7 +17,13 @@
     "api",
     "scraping",
     "manga",
-    "comic"
+    "comic",
+    "multi-provider",
+    "data-processing",
+    "parallel-processing",
+    "caching",
+    "query-builder",
+    "data-enrichment"
   ],
   "author": "",
   "license": "ISC",

@@ -17,6 +17,8 @@ const {
   getRecommendedComics
 } = require('./services/scraper_service');
 const { listProviders, getProviderInfo } = require('./services/provider_manager');
+const apiService = require('./services/api_service');
+const QueryBuilder = require('./services/query_builder');
 
 // Apply performance monitoring to all routes
 router.use(performanceMiddleware);
@@ -87,14 +89,55 @@ router.get('/provider/:id',
   })
 );
 
-// Latest comics endpoint with caching (5 minutes)
+// Latest comics endpoint with caching (5 minutes) - Enhanced version
 router.get('/terbaru',
   defaultRateLimiter,
   cacheService.middleware(5 * 60 * 1000),
   validatePage,
   validateSort,
   asyncHandler(async (req, res) => {
-    const { page, sortBy, sortOrder, genre, type, status, minRating, provider } = req.query;
+    const { 
+      page, 
+      sortBy, 
+      sortOrder, 
+      genre, 
+      type, 
+      status, 
+      minRating, 
+      maxRating,
+      provider,
+      providers, // Multiple providers (comma-separated)
+      advanced, // Use advanced processing
+      enrich, // Enable data enrichment
+      optimize // Enable response optimization
+    } = req.query;
+
+    // Use advanced processing if requested
+    if (advanced === 'true' || advanced === '1') {
+      const providersList = providers ? providers.split(',') : null;
+      const result = await apiService.getLatestComics({
+        page: parseInt(page) || 1,
+        provider,
+        providers: providersList,
+        query: {
+          page: parseInt(page) || 1,
+          pageSize: parseInt(req.query.pageSize) || parseInt(req.query.limit) || 10,
+          sortBy,
+          sortOrder,
+          genre,
+          type,
+          status,
+          minRating: minRating ? parseFloat(minRating) : undefined,
+          maxRating: maxRating ? parseFloat(maxRating) : undefined
+        },
+        enrich: enrich !== 'false',
+        optimize: optimize !== 'false'
+      });
+
+      return res.status(200).json(result);
+    }
+
+    // Legacy processing (backward compatibility)
     const result = await getLatestComics(page, provider);
     
     let comics = result.data;
@@ -103,7 +146,7 @@ router.get('/terbaru',
     if (genre || type || status || minRating) {
       comics = filterItems(comics, {
         genre,
-            type,
+        type,
         status,
         minRating: minRating ? parseFloat(minRating) : undefined
       });
@@ -157,13 +200,32 @@ router.get('/genre/:url',
   })
 );
 
-// Comic detail endpoint with caching (10 minutes)
+// Comic detail endpoint with caching (10 minutes) - Enhanced version
 router.get('/detail/:url',
   defaultRateLimiter,
   cacheService.middleware(10 * 60 * 1000),
   asyncHandler(async (req, res) => {
     const { url } = req.params;
-    const { provider } = req.query;
+    const { 
+      provider,
+      advanced, // Use advanced processing
+      enrich, // Enable data enrichment
+      optimize // Enable response optimization
+    } = req.query;
+    
+    // Use advanced processing if requested
+    if (advanced === 'true' || advanced === '1') {
+      const result = await apiService.getComicDetail({
+        url,
+        provider,
+        enrich: enrich !== 'false',
+        optimize: optimize !== 'false'
+      });
+
+      return res.status(200).json(result);
+    }
+
+    // Legacy processing (backward compatibility)
     const detail = await getComicDetail(url, provider);
     return responseApi(res, 200, 'success', detail);
   })
@@ -181,15 +243,54 @@ router.get('/read/:url',
   })
 );
 
-// Search endpoint with strict rate limiting and caching (2 minutes)
+// Search endpoint with strict rate limiting and caching (2 minutes) - Enhanced version
 router.get('/search',
   strictRateLimiter,
   cacheService.middleware(2 * 60 * 1000),
   validateKeyword,
   validateSort,
   asyncHandler(async (req, res) => {
-    const { keyword, sortBy, sortOrder, genre, type, status, minRating, provider } = req.query;
+    const { 
+      keyword, 
+      sortBy, 
+      sortOrder, 
+      genre, 
+      type, 
+      status, 
+      minRating,
+      maxRating,
+      provider,
+      providers, // Multiple providers (comma-separated)
+      advanced, // Use advanced processing
+      enrich, // Enable data enrichment
+      optimize // Enable response optimization
+    } = req.query;
     
+    // Use advanced processing if requested
+    if (advanced === 'true' || advanced === '1') {
+      const providersList = providers ? providers.split(',') : null;
+      const result = await apiService.searchComics({
+        keyword,
+        provider,
+        providers: providersList,
+        query: {
+          sortBy,
+          sortOrder,
+          genre,
+          type,
+          status,
+          minRating: minRating ? parseFloat(minRating) : undefined,
+          maxRating: maxRating ? parseFloat(maxRating) : undefined,
+          search: keyword
+        },
+        enrich: enrich !== 'false',
+        optimize: optimize !== 'false'
+      });
+
+      return res.status(200).json(result);
+    }
+
+    // Legacy processing (backward compatibility)
     let comics = await searchComics(keyword, provider);
     
     // Apply filters
@@ -211,14 +312,48 @@ router.get('/search',
   })
 );
 
-// Popular comics endpoint with caching (10 minutes)
+// Popular comics endpoint with caching (10 minutes) - Enhanced version
 router.get('/popular',
   defaultRateLimiter,
   cacheService.middleware(10 * 60 * 1000),
   validateSort,
   asyncHandler(async (req, res) => {
-    const { sortBy, sortOrder, genre, type, minRating, provider } = req.query;
+    const { 
+      sortBy, 
+      sortOrder, 
+      genre, 
+      type, 
+      minRating,
+      maxRating,
+      provider,
+      providers, // Multiple providers (comma-separated)
+      advanced, // Use advanced processing
+      enrich, // Enable data enrichment
+      optimize // Enable response optimization
+    } = req.query;
     
+    // Use advanced processing if requested
+    if (advanced === 'true' || advanced === '1') {
+      const providersList = providers ? providers.split(',') : null;
+      const result = await apiService.getPopularComics({
+        provider,
+        providers: providersList,
+        query: {
+          sortBy,
+          sortOrder,
+          genre,
+          type,
+          minRating: minRating ? parseFloat(minRating) : undefined,
+          maxRating: maxRating ? parseFloat(maxRating) : undefined
+        },
+        enrich: enrich !== 'false',
+        optimize: optimize !== 'false'
+      });
+
+      return res.status(200).json(result);
+    }
+
+    // Legacy processing (backward compatibility)
     let comics = await getPopularComics(provider);
     
     // Apply filters
