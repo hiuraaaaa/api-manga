@@ -1,0 +1,279 @@
+const router = require('express')();
+const { responseApi } = require('./helper/response_api');
+const { asyncHandler, errorHandler } = require('./helper/error_handler');
+const cacheService = require('./helper/cache_service');
+const { defaultRateLimiter, strictRateLimiter } = require('./middleware/rate_limiter');
+const { performanceMiddleware, performanceMonitor } = require('./middleware/performance');
+const { validatePage, validateKeyword, validateSort } = require('./middleware/validator');
+const { filterItems, sortItems } = require('./helper/data_validator');
+const {
+  getLatestComics,
+  getComicsByGenre,
+  getGenres,
+  getComicDetail,
+  readChapter,
+  searchComics,
+  getPopularComics,
+  getRecommendedComics
+} = require('./services/scraper_service');
+const { listProviders, getProviderInfo } = require('./services/provider_manager');
+
+// Apply performance monitoring to all routes
+router.use(performanceMiddleware);
+
+// Root endpoint
+router.get('/', (req, res) => {
+  return res.status(200).json({
+    status: 'success',
+    message: 'Welcome to Komikcast API. See https://github.com/KanekiCraynet/api-komikcast for documentation',
+    version: '1.0.0'
+  });
+});
+
+// Health check endpoint
+router.get('/health', (req, res) => {
+  const cacheStats = cacheService.getStats();
+  const perfStats = performanceMonitor.getStats();
+  
+  return res.status(200).json({
+    status: 'success',
+    data: {
+      uptime: perfStats.uptime,
+      cache: cacheStats,
+      performance: {
+        totalRequests: perfStats.totalRequests,
+        avgResponseTime: perfStats.avgResponseTime,
+        cacheHitRate: perfStats.cacheHitRate,
+        errorRate: perfStats.errorRate
+      }
+    }
+        });
+      });
+
+// Providers list endpoint
+router.get('/providers',
+  defaultRateLimiter,
+  cacheService.middleware(15 * 60 * 1000),
+  (req, res) => {
+    const providers = listProviders();
+    return responseApi(res, 200, 'success', providers);
+  }
+);
+
+// Provider info endpoint (singular - for backward compatibility)
+router.get('/provider',
+  defaultRateLimiter,
+  cacheService.middleware(15 * 60 * 1000),
+  (req, res) => {
+    // Redirect to /providers for backward compatibility
+    const providers = listProviders();
+    return responseApi(res, 200, 'success', providers);
+  }
+);
+
+// Single provider info endpoint
+router.get('/provider/:id',
+  defaultRateLimiter,
+  cacheService.middleware(15 * 60 * 1000),
+  asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const provider = getProviderInfo(id.toLowerCase());
+    
+    if (!provider) {
+      return responseApi(res, 404, 'Provider not found');
+    }
+    
+    return responseApi(res, 200, 'success', provider);
+  })
+);
+
+// Latest comics endpoint with caching (5 minutes)
+router.get('/terbaru',
+  defaultRateLimiter,
+  cacheService.middleware(5 * 60 * 1000),
+  validatePage,
+  validateSort,
+  asyncHandler(async (req, res) => {
+    const { page, sortBy, sortOrder, genre, type, status, minRating, provider } = req.query;
+    const result = await getLatestComics(page, provider);
+    
+    let comics = result.data;
+    
+    // Apply filters
+    if (genre || type || status || minRating) {
+      comics = filterItems(comics, {
+        genre,
+            type,
+        status,
+        minRating: minRating ? parseFloat(minRating) : undefined
+      });
+    }
+    
+    // Apply sorting
+    if (sortBy) {
+      comics = sortItems(comics, sortBy, sortOrder);
+    }
+    
+    return res.status(200).json({
+      status: 'success',
+      current_page: result.current_page,
+      length_page: result.length_page,
+      has_next: result.current_page < result.length_page,
+      has_prev: result.current_page > 1,
+      data: comics
+    });
+  })
+);
+
+// Genre list endpoint with caching (15 minutes)
+router.get('/genre',
+  defaultRateLimiter,
+  cacheService.middleware(15 * 60 * 1000),
+  asyncHandler(async (req, res) => {
+    const { provider } = req.query;
+    const genres = await getGenres(provider);
+    return responseApi(res, 200, 'success', genres);
+  })
+);
+
+// Comics by genre endpoint with caching (5 minutes)
+router.get('/genre/:url',
+  defaultRateLimiter,
+  cacheService.middleware(5 * 60 * 1000),
+  validatePage,
+  asyncHandler(async (req, res) => {
+    const { url } = req.params;
+    const { page, provider } = req.query;
+    const result = await getComicsByGenre(url, page, provider);
+    
+    return res.status(200).json({
+      status: 'success',
+      current_page: result.current_page,
+      length_page: result.length_page,
+      has_next: result.current_page < result.length_page,
+      has_prev: result.current_page > 1,
+      data: result.data
+    });
+  })
+);
+
+// Comic detail endpoint with caching (10 minutes)
+router.get('/detail/:url',
+  defaultRateLimiter,
+  cacheService.middleware(10 * 60 * 1000),
+  asyncHandler(async (req, res) => {
+    const { url } = req.params;
+    const { provider } = req.query;
+    const detail = await getComicDetail(url, provider);
+    return responseApi(res, 200, 'success', detail);
+  })
+);
+
+// Read chapter endpoint with caching (15 minutes)
+router.get('/read/:url',
+  defaultRateLimiter,
+  cacheService.middleware(15 * 60 * 1000),
+  asyncHandler(async (req, res) => {
+    const { url } = req.params;
+    const { provider } = req.query;
+    const chapter = await readChapter(url, provider);
+    return responseApi(res, 200, 'success', [chapter]);
+  })
+);
+
+// Search endpoint with strict rate limiting and caching (2 minutes)
+router.get('/search',
+  strictRateLimiter,
+  cacheService.middleware(2 * 60 * 1000),
+  validateKeyword,
+  validateSort,
+  asyncHandler(async (req, res) => {
+    const { keyword, sortBy, sortOrder, genre, type, status, minRating, provider } = req.query;
+    
+    let comics = await searchComics(keyword, provider);
+    
+    // Apply filters
+    if (genre || type || status || minRating) {
+      comics = filterItems(comics, {
+        genre,
+        type,
+        status,
+        minRating: minRating ? parseFloat(minRating) : undefined
+      });
+    }
+    
+    // Apply sorting
+    if (sortBy) {
+      comics = sortItems(comics, sortBy, sortOrder);
+    }
+    
+    return responseApi(res, 200, 'success', comics);
+  })
+);
+
+// Popular comics endpoint with caching (10 minutes)
+router.get('/popular',
+  defaultRateLimiter,
+  cacheService.middleware(10 * 60 * 1000),
+  validateSort,
+  asyncHandler(async (req, res) => {
+    const { sortBy, sortOrder, genre, type, minRating, provider } = req.query;
+    
+    let comics = await getPopularComics(provider);
+    
+    // Apply filters
+    if (genre || type || minRating) {
+      comics = filterItems(comics, {
+        genre,
+        type,
+        minRating: minRating ? parseFloat(minRating) : undefined
+      });
+    }
+    
+    // Apply sorting
+    if (sortBy) {
+      comics = sortItems(comics, sortBy, sortOrder);
+    }
+    
+    return responseApi(res, 200, 'success', comics);
+  })
+);
+
+// Recommended comics endpoint with caching (10 minutes)
+router.get('/recommended',
+  defaultRateLimiter,
+  cacheService.middleware(10 * 60 * 1000),
+  validateSort,
+  asyncHandler(async (req, res) => {
+    const { sortBy, sortOrder, genre, type, minRating, provider } = req.query;
+    
+    let comics = await getRecommendedComics(provider);
+    
+    // Apply filters
+    if (genre || type || minRating) {
+      comics = filterItems(comics, {
+        genre,
+          type,
+        minRating: minRating ? parseFloat(minRating) : undefined
+      });
+    }
+    
+    // Apply sorting
+    if (sortBy) {
+      comics = sortItems(comics, sortBy, sortOrder);
+    }
+    
+    return responseApi(res, 200, 'success', comics);
+  })
+);
+
+
+// 404 handler
+router.all('*', (req, res) => {
+  return responseApi(res, 404, 'route not found');
+});
+
+// Error handler (must be last)
+router.use(errorHandler);
+
+module.exports = { router };
