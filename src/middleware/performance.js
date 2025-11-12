@@ -15,6 +15,15 @@ class PerformanceMonitor {
     };
     
     this.startTime = Date.now();
+    
+    // Time-series data storage (ring buffer)
+    this.timeSeriesData = {
+      maxSize: 1000, // Store last 1000 data points
+      data: []
+    };
+    
+    // Historical data by endpoint
+    this.endpointHistory = new Map();
   }
 
   /**
@@ -65,6 +74,87 @@ class PerformanceMonitor {
     }
     
     endpointMetrics.avgTime = endpointMetrics.totalTime / endpointMetrics.count;
+    
+    // Store time-series data
+    this.addTimeSeriesData({
+      timestamp: Date.now(),
+      endpoint,
+      responseTime,
+      cached,
+      error,
+      statusCode: error ? 500 : 200
+    });
+  }
+  
+  /**
+   * Add data point to time-series
+   * @param {object} dataPoint - Data point to add
+   */
+  addTimeSeriesData(dataPoint) {
+    const { maxSize, data } = this.timeSeriesData;
+    
+    // Add new data point
+    data.push(dataPoint);
+    
+    // Maintain ring buffer size
+    if (data.length > maxSize) {
+      data.shift(); // Remove oldest
+    }
+    
+    // Store per-endpoint history
+    const endpoint = dataPoint.endpoint;
+    if (!this.endpointHistory.has(endpoint)) {
+      this.endpointHistory.set(endpoint, []);
+    }
+    
+    const endpointData = this.endpointHistory.get(endpoint);
+    endpointData.push(dataPoint);
+    
+    // Maintain endpoint history size (last 200 per endpoint)
+    if (endpointData.length > 200) {
+      endpointData.shift();
+    }
+  }
+  
+  /**
+   * Get time-series data
+   * @param {object} options - Query options
+   * @param {string} options.endpoint - Filter by endpoint (optional)
+   * @param {number} options.since - Timestamp to get data since (optional)
+   * @param {number} options.limit - Limit number of data points (optional)
+   * @returns {Array} Time-series data
+   */
+  getTimeSeriesData(options = {}) {
+    const { endpoint, since, limit } = options;
+    let data = this.timeSeriesData.data;
+    
+    // Filter by endpoint
+    if (endpoint) {
+      data = data.filter(d => d.endpoint === endpoint);
+    }
+    
+    // Filter by timestamp
+    if (since) {
+      data = data.filter(d => d.timestamp >= since);
+    }
+    
+    // Limit results
+    if (limit && limit > 0) {
+      data = data.slice(-limit);
+    }
+    
+    return data;
+  }
+  
+  /**
+   * Get endpoint history
+   * @param {string} endpoint - Endpoint path
+   * @param {number} limit - Limit number of data points
+   * @returns {Array} Endpoint history
+   */
+  getEndpointHistory(endpoint, limit = 100) {
+    const history = this.endpointHistory.get(endpoint) || [];
+    return history.slice(-limit);
   }
 
   /**

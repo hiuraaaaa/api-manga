@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>API Manga Dashboard</title>
+  <link rel="stylesheet" href="css/dashboard.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <div class="dashboard-container">
+    <!-- Header -->
+    <header class="dashboard-header">
+      <div class="header-content">
+        <h1>API Manga Dashboard</h1>
+        <div class="header-actions">
+          <button id="theme-toggle" class="btn-icon" title="Toggle theme">
+            <span id="theme-icon">🌙</span>
+          </button>
+          <span class="status-indicator" id="connection-status">
+            <span class="status-dot"></span>
+            <span class="status-text">Connecting...</span>
+          </span>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="dashboard-main">
+      <!-- Overview Cards -->
+      <section class="overview-section">
+        <h2>Overview</h2>
+        <div class="cards-grid">
+          <div class="card">
+            <div class="card-header">
+              <h3>Uptime</h3>
+              <span class="card-icon">⏱️</span>
+            </div>
+            <div class="card-value" id="uptime-value">--</div>
+            <div class="card-label">Server uptime</div>
+          </div>
+          
+          <div class="card">
+            <div class="card-header">
+              <h3>Total Requests</h3>
+              <span class="card-icon">📊</span>
+            </div>
+            <div class="card-value" id="requests-value">--</div>
+            <div class="card-label">All time requests</div>
+          </div>
+          
+          <div class="card">
+            <div class="card-header">
+              <h3>Avg Response Time</h3>
+              <span class="card-icon">⚡</span>
+            </div>
+            <div class="card-value" id="response-time-value">--</div>
+            <div class="card-label">Milliseconds</div>
+          </div>
+          
+          <div class="card">
+            <div class="card-header">
+              <h3>Cache Hit Rate</h3>
+              <span class="card-icon">💾</span>
+            </div>
+            <div class="card-value" id="cache-hit-rate-value">--</div>
+            <div class="card-label">Percentage</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Real-time Charts -->
+      <section class="charts-section">
+        <h2>Real-time Metrics</h2>
+        <div class="charts-grid">
+          <div class="chart-container">
+            <h3>Response Time</h3>
+            <canvas id="response-time-chart"></canvas>
+          </div>
+          
+          <div class="chart-container">
+            <h3>Request Rate</h3>
+            <canvas id="request-rate-chart"></canvas>
+          </div>
+          
+          <div class="chart-container">
+            <h3>Error Rate</h3>
+            <canvas id="error-rate-chart"></canvas>
+          </div>
+        </div>
+      </section>
+
+      <!-- Endpoint Analytics -->
+      <section class="analytics-section">
+        <h2>Endpoint Analytics</h2>
+        <div class="analytics-controls">
+          <div class="filter-group">
+            <label for="endpoint-filter">Filter Endpoint:</label>
+            <input type="text" id="endpoint-filter" placeholder="Search endpoint...">
+          </div>
+          <div class="filter-group">
+            <label for="period-select">Time Period:</label>
+            <select id="period-select">
+              <option value="1h">Last Hour</option>
+              <option value="24h">Last 24 Hours</option>
+              <option value="7d">Last 7 Days</option>
+              <option value="30d">Last 30 Days</option>
+            </select>
+          </div>
+          <button id="refresh-analytics" class="btn-primary">Refresh</button>
+        </div>
+        <div class="table-container">
+          <table id="endpoints-table">
+            <thead>
+              <tr>
+                <th data-sort="endpoint">Endpoint <span class="sort-indicator"></span></th>
+                <th data-sort="requestCount">Requests <span class="sort-indicator"></span></th>
+                <th data-sort="avgResponseTime">Avg Response Time <span class="sort-indicator"></span></th>
+                <th data-sort="cacheHitRate">Cache Hit Rate <span class="sort-indicator"></span></th>
+                <th data-sort="errorRate">Error Rate <span class="sort-indicator"></span></th>
+              </tr>
+            </thead>
+            <tbody id="endpoints-tbody">
+              <tr>
+                <td colspan="5" class="loading">Loading...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Cache Management -->
+      <section class="cache-section">
+        <h2>Cache Management</h2>
+        <div class="cache-controls">
+          <div class="filter-group">
+            <label for="cache-filter">Filter Cache:</label>
+            <input type="text" id="cache-filter" placeholder="Search cache key...">
+          </div>
+          <div class="filter-group">
+            <label for="cache-pattern">Pattern:</label>
+            <input type="text" id="cache-pattern" placeholder="e.g., /search*">
+          </div>
+          <button id="clear-cache" class="btn-danger">Clear Cache</button>
+          <button id="refresh-cache" class="btn-primary">Refresh</button>
+        </div>
+        <div class="table-container">
+          <table id="cache-table">
+            <thead>
+              <tr>
+                <th>Key</th>
+                <th>Level</th>
+                <th>Size</th>
+                <th>Access Count</th>
+                <th>Last Accessed</th>
+                <th>TTL</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="cache-tbody">
+              <tr>
+                <td colspan="7" class="loading">Loading...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="pagination" id="cache-pagination"></div>
+      </section>
+
+      <!-- Provider Status -->
+      <section class="providers-section">
+        <h2>Provider Status</h2>
+        <div class="providers-grid" id="providers-grid">
+          <div class="loading">Loading providers...</div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="js/analytics.js"></script>
+  <script src="js/cache-manager.js"></script>
+  <script src="js/dashboard.js"></script>
+</body>
+</html>
+

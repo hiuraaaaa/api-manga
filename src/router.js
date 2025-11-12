@@ -19,6 +19,7 @@ const {
 const { listProviders, getProviderInfo } = require('./services/provider_manager');
 const apiService = require('./services/api_service');
 const QueryBuilder = require('./services/query_builder');
+const dashboardService = require('./services/dashboard_service');
 
 // Apply performance monitoring to all routes
 router.use(performanceMiddleware);
@@ -445,6 +446,141 @@ router.get('/recommended',
   })
 );
 
+// Dashboard endpoints
+// Dashboard stats endpoint
+router.get('/api/dashboard/stats',
+  defaultRateLimiter,
+  cacheService.middleware(5 * 60 * 1000), // Cache for 5 minutes
+  (req, res) => {
+    try {
+      const stats = dashboardService.getStats();
+      return responseApi(res, 200, 'success', stats);
+    } catch (error) {
+      return responseApi(res, 500, 'error', { message: error.message });
+    }
+  }
+);
+
+// Dashboard analytics endpoint
+router.get('/api/dashboard/analytics',
+  defaultRateLimiter,
+  cacheService.middleware(2 * 60 * 1000), // Cache for 2 minutes
+  asyncHandler(async (req, res) => {
+    const { period = '1h', endpoint } = req.query;
+    
+    try {
+      const analytics = dashboardService.getAnalytics({ period, endpoint });
+      return responseApi(res, 200, 'success', analytics);
+    } catch (error) {
+      throw error;
+    }
+  })
+);
+
+// Dashboard real-time endpoint (Server-Sent Events)
+router.get('/api/dashboard/realtime',
+  defaultRateLimiter,
+  (req, res) => {
+    // Set headers for SSE
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no'); // Disable nginx buffering
+    
+    // Send initial connection message
+    res.write(`data: ${JSON.stringify({ type: 'connected', timestamp: Date.now() })}\n\n`);
+    
+    // Send metrics every 2-3 seconds
+    const interval = setInterval(() => {
+      try {
+        const metrics = dashboardService.getRealtimeMetrics();
+        res.write(`data: ${JSON.stringify({ type: 'metrics', ...metrics })}\n\n`);
+      } catch (error) {
+        res.write(`data: ${JSON.stringify({ type: 'error', message: error.message })}\n\n`);
+      }
+    }, 2500); // 2.5 seconds
+    
+    // Clean up on client disconnect
+    req.on('close', () => {
+      clearInterval(interval);
+      res.end();
+    });
+  }
+);
+
+// Cache management endpoints
+router.get('/api/dashboard/cache/manage',
+  defaultRateLimiter,
+  (req, res) => {
+    try {
+      const { limit = 50, offset = 0, pattern } = req.query;
+      const entries = cacheService.getEntries({
+        limit: parseInt(limit),
+        offset: parseInt(offset),
+        pattern
+      });
+      
+      const stats = cacheService.getStats();
+      
+      return responseApi(res, 200, 'success', {
+        entries,
+        pagination: {
+          limit: parseInt(limit),
+          offset: parseInt(offset),
+          total: stats.total.size
+        }
+      });
+    } catch (error) {
+      return responseApi(res, 500, 'error', { message: error.message });
+    }
+  }
+);
+
+router.delete('/api/dashboard/cache/manage',
+  defaultRateLimiter,
+  (req, res) => {
+    try {
+      const { pattern } = req.query;
+      
+      if (pattern === '*' || !pattern) {
+        // Clear all cache
+        cacheService.clear();
+        return responseApi(res, 200, 'success', { message: 'All cache cleared' });
+      } else {
+        // Clear by pattern
+        const deleted = cacheService.invalidatePattern(pattern);
+        return responseApi(res, 200, 'success', { 
+          message: `Cache cleared for pattern: ${pattern}`,
+          deleted 
+        });
+      }
+    } catch (error) {
+      return responseApi(res, 500, 'error', { message: error.message });
+    }
+  }
+);
+
+router.post('/api/dashboard/cache/manage/warm',
+  defaultRateLimiter,
+  asyncHandler(async (req, res) => {
+    try {
+      const { keys } = req.body;
+      
+      if (!Array.isArray(keys) || keys.length === 0) {
+        return responseApi(res, 400, 'error', { message: 'Keys array is required' });
+      }
+      
+      // Note: This is a placeholder - actual cache warming would need to fetch data
+      // For now, we'll just return success
+      return responseApi(res, 200, 'success', { 
+        message: `Cache warming requested for ${keys.length} keys`,
+        keys: keys.length
+      });
+    } catch (error) {
+      throw error;
+    }
+  })
+);
 
 // 404 handler
 router.all('*', (req, res) => {

@@ -343,6 +343,94 @@ class CacheService {
   }
 
   /**
+   * Get cache entries with metadata
+   * @param {object} options - Query options
+   * @param {number} options.limit - Limit number of entries
+   * @param {number} options.offset - Offset for pagination
+   * @param {string} options.pattern - Filter by pattern
+   * @returns {Array} Cache entries with metadata
+   */
+  getEntries(options = {}) {
+    const { limit = 100, offset = 0, pattern } = options;
+    const entries = [];
+    
+    // Collect L1 cache entries
+    this.l1Cache.forEach((item, key) => {
+      if (!pattern || key.includes(pattern)) {
+        entries.push({
+          key,
+          level: 'L1',
+          createdAt: item.createdAt,
+          expiresAt: item.expiresAt,
+          lastAccessed: item.lastAccessed,
+          accessCount: item.accessCount || 0,
+          expired: this.isExpired(item),
+          compressed: item.compressed,
+          size: this.getItemSize(item),
+          tags: item.tags || []
+        });
+      }
+    });
+    
+    // Collect L2 cache entries
+    this.l2Cache.forEach((item, key) => {
+      if (!pattern || key.includes(pattern)) {
+        entries.push({
+          key,
+          level: 'L2',
+          createdAt: item.createdAt,
+          expiresAt: item.expiresAt,
+          lastAccessed: item.lastAccessed,
+          accessCount: item.accessCount || 0,
+          expired: this.isExpired(item),
+          compressed: item.compressed,
+          size: this.getItemSize(item),
+          tags: item.tags || []
+        });
+      }
+    });
+    
+    // Sort by last accessed (most recent first)
+    entries.sort((a, b) => b.lastAccessed - a.lastAccessed);
+    
+    // Apply pagination
+    return entries.slice(offset, offset + limit);
+  }
+  
+  /**
+   * Get stats for a specific cache entry
+   * @param {string} key - Cache key
+   * @returns {object|null} Entry stats or null if not found
+   */
+  getEntryStats(key) {
+    let item = this.l1Cache.get(key);
+    let level = 'L1';
+    
+    if (!item) {
+      item = this.l2Cache.get(key);
+      level = 'L2';
+    }
+    
+    if (!item) {
+      return null;
+    }
+    
+    return {
+      key,
+      level,
+      createdAt: item.createdAt,
+      expiresAt: item.expiresAt,
+      lastAccessed: item.lastAccessed,
+      accessCount: item.accessCount || 0,
+      expired: this.isExpired(item),
+      compressed: item.compressed,
+      size: this.getItemSize(item),
+      ttl: item.expiresAt - Date.now(),
+      tags: item.tags || []
+    };
+  }
+  
+  /**
    * Get cache statistics
    * @returns {object} Cache statistics
    */
